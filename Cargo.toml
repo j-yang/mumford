@@ -1,0 +1,32 @@
+[package]
+name = "mumford"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Format-aware diff engines for common document types — PDF, Word, Excel, RTF, PowerPoint, plain text"
+repository = "https://github.com/j-yang/mumford"
+keywords = ["diff", "compare", "pdf", "excel", "docx"]
+categories = ["text-processing", "filesystem"]
+
+[features]
+default = ["serde"]
+
+[dependencies]
+tate = { path = "../tate" }
+# Format parsing
+calamine = { version = "0.26", features = ["dates"] }
+zip = "2"
+quick-xml = "0.36"
+# PDF (pdfium runtime binding — not linked at build time)
+pdfium-render = { version = "0.9", features = ["thread_safe"] }
+libloading = "0.7"
+png = "0.17"
+# Folder diff
+walkdir = "2"
+rayon = "1"
+sha2 = "0.10"
+# Serialization (optional)
+serde = { version = "1", features = ["derive"], optional = true }
+
+[dev-dependencies]
+serde_json = "1"
