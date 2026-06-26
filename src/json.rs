@@ -68,7 +68,7 @@ fn to_tree_node(kind: &str, value: &serde_json::Value) -> TreeNode {
         }
         serde_json::Value::Array(arr) => {
             for item in arr {
-                // Array items: no identity → positional matching.
+                let child = to_tree_node("[item]", item);
                 node = node.with_child(child);
             }
         }

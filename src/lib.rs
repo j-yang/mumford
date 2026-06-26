@@ -32,6 +32,7 @@ pub mod pdf;
 pub mod docx;
 pub mod excel;
 pub mod rtf;
+pub mod pptx;
 pub mod folder;
 #[cfg(feature = "json")]
 pub mod json;
@@ -71,6 +72,8 @@ pub struct DiffResult {
     pub docx: Option<docx::DocxResult>,
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub rtf: Option<rtf::RtfResult>,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub pptx: Option<pptx::PptxResult>,
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "String::is_empty"))]
     pub error: String,
 }
@@ -101,6 +104,11 @@ pub fn dispatch(path_a: &str, path_b: &str) -> Result<DiffResult, String> {
             let r = rtf::rtf_diff(path_a, path_b)?;
             res.file_type = "rtf".into();
             res.rtf = Some(r);
+        }
+        "pptx" => {
+            let r = pptx::pptx_diff(path_a, path_b)?;
+            res.file_type = "pptx".into();
+            res.pptx = Some(r);
         }
         "pdf" => {
             let r = pdf::pdf_diff(path_a, path_b)?;
