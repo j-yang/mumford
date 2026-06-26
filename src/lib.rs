@@ -33,6 +33,8 @@ pub mod docx;
 pub mod excel;
 pub mod rtf;
 pub mod folder;
+#[cfg(feature = "json")]
+pub mod json;
 
 use std::path::Path;
 
