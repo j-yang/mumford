@@ -12,7 +12,6 @@ use std::io::Read;
 
 use quick_xml::events::Event;
 use quick_xml::Reader;
-use tate::inline::OpType;
 use tate::lines::diff;
 
 #[cfg(feature = "serde")]
