@@ -3,8 +3,9 @@ name = "mumford"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Format-aware diff engines for common document types — PDF, Word, Excel, RTF, PowerPoint, plain text"
+description = "Format-aware diff engines for common document types — PDF, Word, Excel, RTF, PowerPoint, JSON, plain text"
 repository = "https://github.com/j-yang/mumford"
+readme = "README.md"
 keywords = ["diff", "compare", "pdf", "excel", "docx"]
 categories = ["text-processing", "filesystem"]
 
@@ -13,7 +14,7 @@ default = ["serde", "json"]
 json = ["dep:serde_json"]
 
 [dependencies]
-tate = { path = "../tate" }
+tate = { version = "0.1", path = "../tate" }
 # Format parsing
 calamine = { version = "0.26", features = ["dates"] }
 zip = "2"
