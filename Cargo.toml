@@ -1,9 +1,9 @@
 [package]
 name = "mumford"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 license = "MIT"
-description = "Format-aware diff engines for common document types — PDF, Word, Excel, RTF, PowerPoint, JSON, plain text"
+description = "Format-aware diff engines for common document types — PDF, Word, Excel, PowerPoint, JSON, plain text, folders"
 repository = "https://github.com/j-yang/mumford"
 readme = "README.md"
 keywords = ["diff", "compare", "pdf", "excel", "docx"]

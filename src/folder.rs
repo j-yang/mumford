@@ -77,10 +77,10 @@ pub fn compare(path_a: &str, path_b: &str) -> io::Result<Comparison> {
     let common_set: HashSet<&str> = common.iter().copied().collect();
 
     let mut to_hash: Vec<&Path> = Vec::new();
-    let mut excel_common: Vec<&str> = Vec::new();
+    let mut zip_common: Vec<&str> = Vec::new();
     for &p in &common {
-        if is_excel(p) {
-            excel_common.push(p);
+        if needs_content_fingerprint(p) {
+            zip_common.push(p);
         } else if a_set[p].size != b_set[p].size {
             cmp.modified.push(p.to_string());
         } else {
@@ -127,11 +127,11 @@ pub fn compare(path_a: &str, path_b: &str) -> io::Result<Comparison> {
         }
     }
 
-    let excel_verdicts: Vec<(&str, bool)> = excel_common
+    let zip_verdicts: Vec<(&str, bool)> = zip_common
         .par_iter()
         .map(|&p| {
-            let fa = crate::excel::content_fingerprint(a_set[p].abs.to_string_lossy().as_ref());
-            let fb = crate::excel::content_fingerprint(b_set[p].abs.to_string_lossy().as_ref());
+            let fa = content_fingerprint(a_set[p].abs.to_string_lossy().as_ref());
+            let fb = content_fingerprint(b_set[p].abs.to_string_lossy().as_ref());
             let same = match (fa, fb) {
                 (Some(ha), Some(hb)) => ha == hb,
                 _ => hash_file(&a_set[p].abs)
@@ -143,7 +143,7 @@ pub fn compare(path_a: &str, path_b: &str) -> io::Result<Comparison> {
             (p, same)
         })
         .collect();
-    for (p, same) in excel_verdicts {
+    for (p, same) in zip_verdicts {
         if same {
             cmp.unchanged.push(p.to_string());
         } else {
@@ -227,9 +227,51 @@ fn walk(root: &str) -> io::Result<Vec<FileMeta>> {
     Ok(files)
 }
 
-fn is_excel(rel: &str) -> bool {
+/// Whether a file is a zip-container format whose raw bytes may change even
+/// when content is identical (due to metadata timestamps in docProps/).
+fn needs_content_fingerprint(rel: &str) -> bool {
     let lower = rel.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-    matches!(lower.as_str(), "xlsx" | "xlsm" | "xls")
+    matches!(lower.as_str(), "xlsx" | "xlsm" | "xls" | "docx" | "pptx")
+}
+
+/// Content-aware fingerprint for zip-container formats. For Excel, uses
+/// cell-value hashing via calamine. For docx/pptx, hashes all zip entries
+/// except docProps/ metadata.
+fn content_fingerprint(path: &str) -> Option<String> {
+    let ext = Path::new(path).extension()?.to_str()?.to_lowercase();
+    match ext.as_str() {
+        "xlsx" | "xlsm" | "xls" => crate::excel::content_fingerprint(path),
+        "docx" | "pptx" => zip_content_fingerprint(path),
+        _ => None,
+    }
+}
+
+/// Hash all zip entries except docProps/ metadata. Two files with identical
+/// content but different timestamps will produce the same fingerprint.
+fn zip_content_fingerprint(path: &str) -> Option<String> {
+    use std::io::Read;
+    let file = std::fs::File::open(path).ok()?;
+    let mut zip = zip::ZipArchive::new(file).ok()?;
+    let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i).ok()?;
+        let name = entry.name().to_string();
+        if name.starts_with("docProps/") {
+            continue;
+        }
+        let mut buf = Vec::new();
+        entry.read_to_end(&mut buf).ok()?;
+        entries.push((name, buf));
+    }
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut hasher = Sha256::new();
+    for (name, data) in &entries {
+        hasher.update(name.as_bytes());
+        hasher.update([0u8]);
+        hasher.update(data);
+        hasher.update([0x1f]);
+    }
+    Some(crate::hex(&hasher.finalize()))
 }
 
 fn hash_file(path: &Path) -> io::Result<String> {

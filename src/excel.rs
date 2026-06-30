@@ -177,7 +177,7 @@ fn cell_to_string(d: &Data) -> String {
         Data::String(s) => s.clone(),
         Data::Float(f) => format_float(*f),
         Data::Int(i) => i.to_string(),
-        Data::Bool(b) => if *b { "TRUE".into() } else { "FALSE".into() },
+        Data::Bool(b) => if *b { "true".into() } else { "false".into() },
         Data::DateTime(dt) => format_float(dt.as_f64()),
         Data::DateTimeIso(s) => s.clone(),
         Data::DurationIso(s) => s.clone(),
@@ -227,7 +227,7 @@ mod tests {
         assert_eq!(cell_to_string(&Data::Int(42)), "42");
         assert_eq!(cell_to_string(&Data::Float(3.0)), "3");
         assert_eq!(cell_to_string(&Data::Float(3.14)), "3.14");
-        assert_eq!(cell_to_string(&Data::Bool(true)), "TRUE");
+        assert_eq!(cell_to_string(&Data::Bool(true)), "true");
         assert_eq!(cell_to_string(&Data::Empty), "");
     }
 

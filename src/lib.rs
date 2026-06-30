@@ -10,28 +10,20 @@
 //! - **PDF** — text extraction via pdfium, running-header stripping, line diff
 //! - **Word (.docx)** — OOXML paragraph + table extraction, paragraph diff
 //! - **Excel (.xlsx/.xls/.xlsm)** — cell-level grid alignment via `tate::grid`
-//! - **RTF** — styled-table parsing, row/cell diff with formatting preserved
+//! - **PowerPoint (.pptx)** — slide text extraction and alignment, line diff
+//! - **JSON** (optional `json` feature) — structural tree diff via `tate::tree`
 //! - **Folders** — recursive comparison with sha256 hashing and rename detection
 //!
 //! ## Architecture
 //!
-//! `tate` (algorithms: lines, inline, grid, tree) is the foundation.
-//! `mumford` (format engines: parse → feed to tate → wrap result) sits on top.
-//! Your app (domain adapters + UI) sits above mumford.
-//!
-//! Each format engine:
-//! 1. Parses the file into a Rust data structure (lines, grids, paragraphs…)
-//! 2. Feeds the parsed data to the appropriate tate algorithm
-//! 3. Wraps the result in a format-specific output type with paths and metadata
-//!
-//! The dispatch function ([`dispatch`]) routes by file extension to the right
-//! engine, returning a unified [`DiffResult`].
+//! `tate` (algorithms: lines, inline, grid, tree, unified, merge) is the
+//! foundation. `mumford` (format engines: parse → feed to tate → wrap result)
+//! sits on top. Your app (domain adapters + UI) sits above mumford.
 
 pub mod text;
 pub mod pdf;
 pub mod docx;
 pub mod excel;
-pub mod rtf;
 pub mod pptx;
 pub mod folder;
 #[cfg(feature = "json")]
@@ -71,8 +63,6 @@ pub struct DiffResult {
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub docx: Option<docx::DocxResult>,
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
-    pub rtf: Option<rtf::RtfResult>,
-    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub pptx: Option<pptx::PptxResult>,
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "String::is_empty"))]
     pub error: String,
@@ -99,11 +89,6 @@ pub fn dispatch(path_a: &str, path_b: &str) -> Result<DiffResult, String> {
             let r = docx::docx_diff(path_a, path_b)?;
             res.file_type = "docx".into();
             res.docx = Some(r);
-        }
-        "rtf" => {
-            let r = rtf::rtf_diff(path_a, path_b)?;
-            res.file_type = "rtf".into();
-            res.rtf = Some(r);
         }
         "pptx" => {
             let r = pptx::pptx_diff(path_a, path_b)?;

@@ -1,12 +1,14 @@
 //! Word (.docx) diff: paragraph-level add/delete/modify plus table change counts.
 //! Reads word/document.xml from the zip and walks it with a streaming XML reader,
 //! tracking paragraphs (<w:p>), tables (<w:tbl>), rows (<w:tr>), cells (<w:tc>)
-//! and text runs (<w:t>). Paragraph diff delegates to [`tate::lines::diff`].
+//! and text runs (<w:t>). Paragraph and table alignment use LCS via
+//! [`tate::lines::diff`] + [`tate::inline::pair_replacements`], so inserting
+//! content in the middle does not cascade into spurious modifications.
 
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use std::io::Read;
-use tate::inline::OpType;
+use tate::inline::{pair_replacements, OpType, DEFAULT_SIMILARITY};
 use tate::lines::diff;
 
 #[cfg(feature = "serde")]
@@ -74,59 +76,63 @@ pub fn docx_diff(path_a: &str, path_b: &str) -> Result<DocxResult, String> {
         ..Default::default()
     };
 
+    // --- Paragraph diff: LCS + pair_replacements for modified detection ---
     let text_a: Vec<String> = paras_a.iter().map(|p| p.text.clone()).collect();
     let text_b: Vec<String> = paras_b.iter().map(|p| p.text.clone()).collect();
 
-    let ops = diff(&text_a, &text_b);
+    let ops = pair_replacements(diff(&text_a, &text_b), DEFAULT_SIMILARITY);
     for op in &ops {
         match op.typ {
             OpType::Insert => {
-                if op.b < paras_b.len() {
-                    res.added_p.push(paras_b[op.b].clone());
+                if op.b > 0 && op.b <= paras_b.len() {
+                    res.added_p.push(paras_b[op.b - 1].clone());
                 }
             }
             OpType::Delete => {
-                if op.a < paras_a.len() {
-                    res.deleted_p.push(paras_a[op.a].clone());
+                if op.a > 0 && op.a <= paras_a.len() {
+                    res.deleted_p.push(paras_a[op.a - 1].clone());
+                }
+            }
+            OpType::Replace => {
+                let ia = if op.a > 0 { op.a - 1 } else { 0 };
+                let ib = if op.b > 0 { op.b - 1 } else { 0 };
+                if ia < paras_a.len() && ib < paras_b.len() {
+                    res.modified_p.push(DocxParaDiff {
+                        index: ia,
+                        old: paras_a[ia].text.clone(),
+                        new: paras_b[ib].text.clone(),
+                    });
                 }
             }
             OpType::Equal => {}
-            OpType::Replace => {}
         }
     }
 
-    let limit = paras_a.len().min(paras_b.len());
-    for i in 0..limit {
-        if paras_a[i].text != paras_b[i].text {
-            res.modified_p.push(DocxParaDiff {
-                index: i,
-                old: paras_a[i].text.clone(),
-                new: paras_b[i].text.clone(),
-            });
-        }
-    }
+    // --- Table diff: LCS alignment on flattened signatures ---
+    let sig_a: Vec<String> = tables_a.iter().map(table_sig).collect();
+    let sig_b: Vec<String> = tables_b.iter().map(table_sig).collect();
+    let t_ops = pair_replacements(diff(&sig_a, &sig_b), DEFAULT_SIMILARITY);
 
-    if tables_a.len() != tables_b.len() {
-        if tables_b.len() > tables_a.len() {
-            res.added_t = tables_b.len() - tables_a.len();
-        } else {
-            res.deleted_t = tables_a.len() - tables_b.len();
+    for op in &t_ops {
+        match op.typ {
+            OpType::Equal => {}
+            OpType::Delete => res.deleted_t += 1,
+            OpType::Insert => res.added_t += 1,
+            OpType::Replace => res.modified_t += 1,
         }
     }
-    res.tables = if tables_a.len() < tables_b.len() { tables_b.clone() } else { tables_a.clone() };
-
-    let tlimit = tables_a.len().min(tables_b.len());
-    for i in 0..tlimit {
-        if !tables_equal(&tables_a[i].rows, &tables_b[i].rows) {
-            res.modified_t += 1;
-        }
-    }
+    res.tables = tables_b.clone();
 
     res.added_p.sort_by_key(|p| p.index);
     res.deleted_p.sort_by_key(|p| p.index);
     res.modified_p.sort_by_key(|p| p.index);
 
     Ok(res)
+}
+
+/// Flatten a table into a single comparable string for LCS alignment.
+fn table_sig(t: &DocxTable) -> String {
+    t.rows.iter().map(|r| r.join("\t")).collect::<Vec<_>>().join("\n")
 }
 
 fn read_docx(path: &str) -> Result<(Vec<DocxParagraph>, Vec<DocxTable>), String> {
@@ -241,10 +247,6 @@ fn local_name(raw: &[u8]) -> String {
     }
 }
 
-fn tables_equal(a: &[Vec<String>], b: &[Vec<String>]) -> bool {
-    a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x == y)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,5 +267,62 @@ mod tests {
         assert_eq!(paras[1].text, "Second paragraph");
         assert_eq!(tables.len(), 1);
         assert_eq!(tables[0].rows, vec![vec!["A1", "B1"], vec!["A2", "B2"]]);
+    }
+
+    #[test]
+    fn paragraph_lcs_no_cascade() {
+        // Inserting a paragraph in the middle should be 1 insert, not a cascade.
+        let xml_a = r#"<w:document xmlns:w="x"><w:body>
+            <w:p><w:r><w:t>Alpha</w:t></w:r></w:p>
+            <w:p><w:r><w:t>Charlie</w:t></w:r></w:p>
+            </w:body></w:document>"#;
+        let xml_b = r#"<w:document xmlns:w="x"><w:body>
+            <w:p><w:r><w:t>Alpha</w:t></w:r></w:p>
+            <w:p><w:r><w:t>Beta NEW</w:t></w:r></w:p>
+            <w:p><w:r><w:t>Charlie</w:t></w:r></w:p>
+            </w:body></w:document>"#;
+
+        let (paras_a, _) = parse_document_xml(xml_a);
+        let (paras_b, _) = parse_document_xml(xml_b);
+
+        let text_a: Vec<String> = paras_a.iter().map(|p| p.text.clone()).collect();
+        let text_b: Vec<String> = paras_b.iter().map(|p| p.text.clone()).collect();
+        let ops = pair_replacements(diff(&text_a, &text_b), DEFAULT_SIMILARITY);
+
+        let inserts = ops.iter().filter(|o| o.typ == OpType::Insert).count();
+        let deletes = ops.iter().filter(|o| o.typ == OpType::Delete).count();
+        let replaces = ops.iter().filter(|o| o.typ == OpType::Replace).count();
+        let equals = ops.iter().filter(|o| o.typ == OpType::Equal).count();
+
+        assert_eq!(inserts, 1, "should be 1 insert, got {inserts}");
+        assert_eq!(deletes, 0);
+        assert_eq!(replaces, 0);
+        assert_eq!(equals, 2, "Alpha and Charlie should still match");
+    }
+
+    #[test]
+    fn table_lcs_no_cascade() {
+        // Inserting a table in the middle should be 1 insert, not cascade.
+        let (tables_a, ) = (vec![
+            DocxTable { index: 0, rows: vec![vec!["A".into()]] },
+            DocxTable { index: 1, rows: vec![vec!["C".into()]] },
+        ],);
+        let (tables_b, ) = (vec![
+            DocxTable { index: 0, rows: vec![vec!["A".into()]] },
+            DocxTable { index: 1, rows: vec![vec!["B".into()]] },
+            DocxTable { index: 2, rows: vec![vec!["C".into()]] },
+        ],);
+
+        let sig_a: Vec<String> = tables_a.iter().map(table_sig).collect();
+        let sig_b: Vec<String> = tables_b.iter().map(table_sig).collect();
+        let ops = pair_replacements(diff(&sig_a, &sig_b), DEFAULT_SIMILARITY);
+
+        let inserts = ops.iter().filter(|o| o.typ == OpType::Insert).count();
+        let deletes = ops.iter().filter(|o| o.typ == OpType::Delete).count();
+        let equals = ops.iter().filter(|o| o.typ == OpType::Equal).count();
+
+        assert_eq!(inserts, 1, "should be 1 table insert");
+        assert_eq!(deletes, 0);
+        assert_eq!(equals, 2, "table A and C should match");
     }
 }
