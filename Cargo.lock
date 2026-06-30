@@ -614,7 +614,7 @@ dependencies = [
 
 [[package]]
 name = "mumford"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "calamine",
  "libloading 0.7.4",

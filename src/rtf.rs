@@ -1,8 +1,8 @@
-//! RTF diff for styled tables. We parse the RTF into a styled table model
-//! (cells with text + shading/borders/font/alignment, real column widths from
-//! \cellx), align rows and cells between the two files, and tag each cell
-//! added/removed/modified/equal. The frontend renders both sides as HTML
-//! tables side by side with cell-level highlights. No external renderer.
+//! RTF diff for styled tables. We parse the RTF into a table model (cells with
+//! text + semantic styling — background, color, alignment, bold, monospace),
+//! align rows and cells between the two files, and tag each cell
+//! added/removed/modified/equal. The output carries no layout information
+//! (column widths, font sizes, borders) — consumers control rendering entirely.
 
 use tate::inline::{inline_segments, Seg, DEFAULT_SIMILARITY, OpType};
 use tate::lines::diff;
@@ -10,7 +10,8 @@ use tate::lines::diff;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-/// Visual style of one cell, mapped straight to CSS by the frontend.
+/// Visual style of one cell — semantic only, no layout. Consumers control
+/// rendering (column widths, fonts, borders) entirely.
 #[derive(Debug, Clone, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CellStyle {
@@ -28,30 +29,6 @@ pub struct CellStyle {
     /// Monospace font (\f2 Courier in SAS output).
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "std::ops::Not::not"))]
     pub mono: bool,
-    /// Font size in half-points (\fs), 0 = default.
-    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "is_zero_u32"))]
-    pub fs: u32,
-    /// Column width as a fraction of the row width (0..1), from \cellx.
-    #[cfg_attr(feature = "serde", serde(rename = "widthPct", default, skip_serializing_if = "is_zero_f32"))]
-    pub width_pct: f32,
-    /// Which borders are drawn (top, bottom, left, right).
-    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "std::ops::Not::not"))]
-    pub bt: bool,
-    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "std::ops::Not::not"))]
-    pub bb: bool,
-    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "std::ops::Not::not"))]
-    pub bl: bool,
-    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "std::ops::Not::not"))]
-    pub br: bool,
-}
-
-#[cfg(feature = "serde")]
-fn is_zero_u32(v: &u32) -> bool {
-    *v == 0
-}
-#[cfg(feature = "serde")]
-fn is_zero_f32(v: &f32) -> bool {
-    *v == 0.0
 }
 
 /// One parsed cell: its text and style.
@@ -364,19 +341,13 @@ struct CharState {
     color_idx: usize, // \cf
     bold: bool,
     mono: bool,
-    fs: u32,
 }
 
-/// Per-cell-definition state from \trowd (\cellx boundaries, shading, borders).
+/// Per-cell-definition state from \trowd (shading, alignment).
 #[derive(Debug, Clone, Default)]
 struct CellDef {
-    cellx: i32,      // right boundary in twips
     bg_idx: usize,   // \clcbpat color index
     align: String,   // from \ql/\qc/\qr seen before \cell
-    bt: bool,
-    bb: bool,
-    bl: bool,
-    br: bool,
 }
 
 fn is_ascii_letter(c: char) -> bool {
@@ -667,7 +638,6 @@ fn handle_word(
         "cf" => cs.color_idx = param as usize,
         "b" => cs.bold = param_str.is_empty() || param != 0,
         "f" => cs.mono = param == 2, // \f2 = Courier in SAS output
-        "fs" => cs.fs = param as u32,
         "plain" => *cs = CharState::default(),
         // --- alignment (applies to current paragraph/cell) ---
         "ql" => *cur_align = "left".into(),
@@ -679,12 +649,7 @@ fn handle_word(
             *pending_def = CellDef::default();
         }
         "clcbpat" => pending_def.bg_idx = param as usize,
-        "clbrdrt" => pending_def.bt = true,
-        "clbrdrb" => pending_def.bb = true,
-        "clbrdrl" => pending_def.bl = true,
-        "clbrdrr" => pending_def.br = true,
         "cellx" => {
-            pending_def.cellx = param as i32;
             pending_def.align = cur_align.clone();
             cell_defs.push(std::mem::take(pending_def));
         }
@@ -692,7 +657,7 @@ fn handle_word(
         "cell" => {
             let idx = row_cells.len();
             let def = cell_defs.get(idx).cloned().unwrap_or_default();
-            row_cells.push(make_cell(cur_text, cs, &def, cell_defs, idx, cur_align));
+            row_cells.push(make_cell(cur_text, cs, &def, cur_align));
             cur_text.clear();
         }
         "row" => {
@@ -721,19 +686,8 @@ fn make_cell(
     text: &str,
     cs: &CharState,
     def: &CellDef,
-    cell_defs: &[CellDef],
-    idx: usize,
     cur_align: &str,
 ) -> Cell {
-    // Column width fraction from \cellx boundaries.
-    let prev_x = if idx == 0 { 0 } else { cell_defs.get(idx - 1).map(|d| d.cellx).unwrap_or(0) };
-    let last_x = cell_defs.last().map(|d| d.cellx).unwrap_or(0);
-    let width_pct = if last_x > 0 {
-        ((def.cellx - prev_x).max(0) as f32) / (last_x as f32)
-    } else {
-        0.0
-    };
-
     let align = if !def.align.is_empty() {
         def.align.clone()
     } else if !cur_align.is_empty() {
@@ -746,15 +700,8 @@ fn make_cell(
         align,
         bold: cs.bold,
         mono: cs.mono,
-        fs: cs.fs,
-        width_pct,
-        bt: def.bt,
-        bb: def.bb,
-        bl: def.bl,
-        br: def.br,
         ..Default::default()
     };
-    // Store indices for now; resolve_colors fixes them after the color table.
     if def.bg_idx > 0 {
         style.bg = format!("idx:{}", def.bg_idx);
     }
@@ -827,7 +774,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_rows_cells_and_width() {
+    fn parses_rows_cells_and_style() {
         let rtf = r"{\rtf1\ansi{\colortbl;\red255\green0\blue0;}\trowd\clcbpat1\cellx5000\cellx10000\intbl A\cell B\cell\row}";
         let rows = parse_rtf_tables(rtf);
         assert_eq!(rows.len(), 1, "rows: {:?}", rows);
@@ -836,8 +783,6 @@ mod tests {
         assert_eq!(rows[0].cells[1].text, "B");
         // first cell got \clcbpat1 -> red bg
         assert_eq!(rows[0].cells[0].style.bg, "#ff0000");
-        // widths ~ 50/50
-        assert!((rows[0].cells[0].style.width_pct - 0.5).abs() < 0.01, "w={}", rows[0].cells[0].style.width_pct);
     }
 
     #[test]
