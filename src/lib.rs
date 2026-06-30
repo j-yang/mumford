@@ -119,3 +119,13 @@ fn ext_of(path: &str) -> Option<String> {
         .map(|e| e.to_string_lossy().to_lowercase())
         .filter(|e| !e.is_empty())
 }
+
+/// Extract the local name from a potentially namespace-prefixed XML tag name.
+/// `"w:p"` → `"p"`, `"p"` → `"p"`.
+pub(crate) fn xml_local_name(raw: &[u8]) -> String {
+    let s = String::from_utf8_lossy(raw);
+    match s.rsplit_once(':') {
+        Some((_, local)) => local.to_string(),
+        None => s.into_owned(),
+    }
+}

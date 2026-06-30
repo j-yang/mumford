@@ -1,5 +1,5 @@
 //! PDF text diff: extract per-page text with pdfium, strip repeated running
-//! headers/footers, then diff the flat line stream. Ported from internal/diff/pdf.go.
+//! headers/footers, then diff the flat line stream.
 //!
 //! pdfium is bound at RUNTIME (libloading) — nothing is linked at build time, so
 //! cross-compiling is unaffected. The library (`pdfium.dll` on Windows,
@@ -25,6 +25,15 @@ static PDFIUM: OnceLock<Result<Pdfium, String>> = OnceLock::new();
 /// extraction work process-wide. PDF diffs are I/O/CPU bound and run one at a
 /// time anyway, so this gates concurrent callers without hurting throughput.
 static PDFIUM_LOCK: Mutex<()> = Mutex::new(());
+
+/// Maximum hover-text length in diff highlights.
+const HOVER_TEXT_MAX: usize = 300;
+/// Render target width bounds (pixels).
+const RENDER_WIDTH_MIN: u32 = 64;
+const RENDER_WIDTH_MAX: u32 = 4000;
+/// A line appearing on ≥ 50% of pages with ≤ 1.5 average occurrences per page
+/// is treated as a running header/footer.
+const HEADER_FOOTER_MAX_AVG_PER_PAGE: f64 = 1.5;
 
 fn pdfium() -> Result<&'static Pdfium, String> {
     PDFIUM
@@ -163,7 +172,7 @@ pub fn render_page(path: &str, page_index: usize, target_width: u32) -> Result<V
     // Preserve aspect ratio: derive height from the page's point dimensions.
     let w_pts = page.width().value.max(1.0);
     let h_pts = page.height().value.max(1.0);
-    let target_w = target_width.clamp(64, 4000) as i32;
+    let target_w = target_width.clamp(RENDER_WIDTH_MIN, RENDER_WIDTH_MAX) as i32;
     let target_h = ((target_w as f32) * (h_pts / w_pts)).round() as i32;
 
     let config = PdfRenderConfig::new()
@@ -609,7 +618,7 @@ fn classify(lines_a: &[GeomLine], lines_b: &[GeomLine]) -> (Vec<BiChange>, Vec<P
                         b_index: Some(op.b),
                         b_page: Some(bl.page),
                         b_segs: Vec::new(),
-                        b_text: truncate(&bl.text, 300),
+                        b_text: truncate(&bl.text, HOVER_TEXT_MAX),
                     });
                 }
             }
@@ -620,11 +629,11 @@ fn classify(lines_a: &[GeomLine], lines_b: &[GeomLine]) -> (Vec<BiChange>, Vec<P
                     a_index: Some(op.a),
                     a_page: al.map(|l| l.page),
                     a_segs: op.old_segs.clone(),
-                    a_text: al.map(|l| truncate(&l.text, 300)).unwrap_or_default(),
+                    a_text: al.map(|l| truncate(&l.text, HOVER_TEXT_MAX)).unwrap_or_default(),
                     b_index: Some(op.b),
                     b_page: bl.map(|l| l.page),
                     b_segs: op.new_segs.clone(),
-                    b_text: bl.map(|l| truncate(&l.text, 300)).unwrap_or_default(),
+                    b_text: bl.map(|l| truncate(&l.text, HOVER_TEXT_MAX)).unwrap_or_default(),
                 });
             }
             OpType::Delete => {
@@ -634,7 +643,7 @@ fn classify(lines_a: &[GeomLine], lines_b: &[GeomLine]) -> (Vec<BiChange>, Vec<P
                         a_index: Some(op.a),
                         a_page: Some(al.page),
                         a_segs: Vec::new(),
-                        a_text: truncate(&al.text, 300),
+                        a_text: truncate(&al.text, HOVER_TEXT_MAX),
                         b_index: None,
                         b_page: None,
                         b_segs: Vec::new(),
@@ -853,7 +862,7 @@ fn repeated_lines(pages: &[Vec<String>]) -> HashSet<String> {
     let threshold = pages.len().div_ceil(2);
     for (k, &c) in &page_count {
         let avg = total_count[k] as f64 / c as f64;
-        if c >= threshold && avg <= 1.5 && !strip_mask(k).trim().is_empty() {
+        if c >= threshold && avg <= HEADER_FOOTER_MAX_AVG_PER_PAGE && !strip_mask(k).trim().is_empty() {
             repeated.insert(k.clone());
         }
     }
@@ -863,7 +872,7 @@ fn repeated_lines(pages: &[Vec<String>]) -> HashSet<String> {
 /// normalize_pdf_line trims and collapses runs of whitespace so minor extraction
 /// jitter does not produce false differences, while preserving single column gaps.
 fn normalize_pdf_line(s: &str) -> String {
-    // Replace non-breaking space (U+00A0) with a regular space, like the Go code.
+    // Replace non-breaking space (U+00A0) with a regular space.
     let s = s.replace('\u{00a0}', " ");
     let s = s.trim_matches([' ', '\t']);
     // Collapse internal whitespace runs: a run of 2+ spaces/tabs longer than 4 is
@@ -927,7 +936,7 @@ fn strip_running_headers_footers(pages: Vec<Vec<String>>) -> Vec<Vec<String>> {
     let mut repeated: HashSet<String> = HashSet::new();
     for (k, &c) in &page_count {
         let avg_per_page = total_count[k] as f64 / c as f64;
-        if c >= threshold && avg_per_page <= 1.5 && !strip_mask(k).trim().is_empty() {
+        if c >= threshold && avg_per_page <= HEADER_FOOTER_MAX_AVG_PER_PAGE && !strip_mask(k).trim().is_empty() {
             repeated.insert(k.clone());
         }
     }

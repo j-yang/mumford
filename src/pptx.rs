@@ -16,6 +16,13 @@ use quick_xml::Reader;
 use tate::inline::OpType;
 use tate::lines::diff;
 
+/// Minimum Jaccard similarity to confirm a positional slide match. Lower than
+/// the reorder threshold because position agreement is already strong evidence.
+const POSITIONAL_MATCH_THRESHOLD: f64 = 0.4;
+/// Minimum Jaccard similarity to match a slide to a non-corresponding position.
+/// Higher because without positional evidence, content must be clearly similar.
+const REORDER_MATCH_THRESHOLD: f64 = 0.5;
+
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -131,7 +138,7 @@ fn align_slides(a: &[SlideContent], b: &[SlideContent]) -> Vec<SlidePair> {
     for (i, sa) in a.iter().enumerate() {
         if i < b.len() && !used_b[i] {
             let sim = slide_similarity(&sa.lines, &b[i].lines);
-            if sim >= 0.4 {
+            if sim >= POSITIONAL_MATCH_THRESHOLD {
                 used_b[i] = true;
                 pairs.push(SlidePair { a: Some(i), b: Some(i) });
                 continue;
@@ -151,7 +158,7 @@ fn align_slides(a: &[SlideContent], b: &[SlideContent]) -> Vec<SlidePair> {
             }
         }
         if let Some(j) = best_j {
-            if best_sim >= 0.5 {
+            if best_sim >= REORDER_MATCH_THRESHOLD {
                 used_b[j] = true;
                 pairs.push(SlidePair { a: Some(i), b: Some(j) });
                 continue;
@@ -236,7 +243,7 @@ fn extract_slide_text(xml: &str) -> Vec<String> {
     loop {
         match reader.read_event() {
             Ok(Event::Start(e)) => {
-                if local_name(e.name().as_ref()) == "t" {
+                if xml_local_name(e.name().as_ref()) == "t" {
                     in_text = true;
                     buf.clear();
                 }
@@ -247,7 +254,7 @@ fn extract_slide_text(xml: &str) -> Vec<String> {
                 }
             }
             Ok(Event::End(e)) => {
-                if local_name(e.name().as_ref()) == "t" && in_text {
+                if xml_local_name(e.name().as_ref()) == "t" && in_text {
                     let text = buf.trim().to_string();
                     if !text.is_empty() {
                         lines.push(text);
@@ -264,14 +271,7 @@ fn extract_slide_text(xml: &str) -> Vec<String> {
     lines
 }
 
-/// Strip namespace prefix ("a:t" -> "t").
-fn local_name(raw: &[u8]) -> String {
-    let s = String::from_utf8_lossy(raw);
-    match s.rsplit_once(':') {
-        Some((_, local)) => local.to_string(),
-        None => s.into_owned(),
-    }
-}
+use crate::xml_local_name;
 
 #[cfg(test)]
 mod tests {

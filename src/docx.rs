@@ -19,8 +19,6 @@ use serde::{Deserialize, Serialize};
 pub struct DocxParagraph {
     pub index: usize,
     pub text: String,
-    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "String::is_empty"))]
-    pub style: String,
 }
 
 #[derive(Debug, Clone)]
@@ -170,7 +168,7 @@ fn parse_document_xml(xml: &str) -> (Vec<DocxParagraph>, Vec<DocxTable>) {
     loop {
         match reader.read_event() {
             Ok(Event::Start(e)) => {
-                let name = local_name(e.name().as_ref());
+                let name = xml_local_name(e.name().as_ref());
                 match name.as_str() {
                     "tbl" => {
                         table_depth += 1;
@@ -193,7 +191,7 @@ fn parse_document_xml(xml: &str) -> (Vec<DocxParagraph>, Vec<DocxTable>) {
                 }
             }
             Ok(Event::End(e)) => {
-                let name = local_name(e.name().as_ref());
+                let name = xml_local_name(e.name().as_ref());
                 match name.as_str() {
                     "t" if in_text => {
                         if table_depth > 0 {
@@ -222,7 +220,7 @@ fn parse_document_xml(xml: &str) -> (Vec<DocxParagraph>, Vec<DocxTable>) {
                     "p" if table_depth == 0 => {
                         let text = cur_para.trim().to_string();
                         if !text.is_empty() {
-                            paragraphs.push(DocxParagraph { index: para_idx, text, style: String::new() });
+                            paragraphs.push(DocxParagraph { index: para_idx, text });
                             para_idx += 1;
                         }
                         cur_para.clear();
@@ -239,13 +237,7 @@ fn parse_document_xml(xml: &str) -> (Vec<DocxParagraph>, Vec<DocxTable>) {
     (paragraphs, tables)
 }
 
-fn local_name(raw: &[u8]) -> String {
-    let s = String::from_utf8_lossy(raw);
-    match s.rsplit_once(':') {
-        Some((_, local)) => local.to_string(),
-        None => s.into_owned(),
-    }
-}
+use crate::xml_local_name;
 
 #[cfg(test)]
 mod tests {
