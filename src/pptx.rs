@@ -12,6 +12,8 @@ use std::io::Read;
 
 use quick_xml::events::Event;
 use quick_xml::Reader;
+#[cfg(test)]
+use tate::inline::OpType;
 use tate::lines::diff;
 
 #[cfg(feature = "serde")]
@@ -148,13 +150,14 @@ fn align_slides(a: &[SlideContent], b: &[SlideContent]) -> Vec<SlidePair> {
                 best_j = Some(j);
             }
         }
-        if best_j.is_some() && best_sim >= 0.5 {
-            let j = best_j.unwrap();
-            used_b[j] = true;
-            pairs.push(SlidePair { a: Some(i), b: Some(j) });
-        } else {
-            pairs.push(SlidePair { a: Some(i), b: None });
+        if let Some(j) = best_j {
+            if best_sim >= 0.5 {
+                used_b[j] = true;
+                pairs.push(SlidePair { a: Some(i), b: Some(j) });
+                continue;
+            }
         }
+        pairs.push(SlidePair { a: Some(i), b: None });
     }
 
     // Leftover B slides are additions.
@@ -345,7 +348,7 @@ mod tests {
 
     #[test]
     fn diff_identical_pptx_content() {
-        let a_lines = vec!["Title".into(), "Bullet 1".into(), "Bullet 2".into()];
+        let a_lines: Vec<String> = vec!["Title".into(), "Bullet 1".into(), "Bullet 2".into()];
         let b_lines = a_lines.clone();
         let raw = diff(&a_lines, &b_lines);
         assert!(raw.iter().all(|o| o.typ == OpType::Equal));

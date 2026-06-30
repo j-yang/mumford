@@ -66,10 +66,7 @@ pub fn excel_diff(path_a: &str, path_b: &str) -> Result<ExcelResult, String> {
     let sheets_b: Vec<String> = book_b.as_ref().map(|b| b.keys().cloned().collect()).unwrap_or_default();
     let union = union_strings(&sheets_a, &sheets_b);
 
-    let opts = GridOptions {
-        use_header_names: false,
-        ..GridOptions::default()
-    };
+    let opts = GridOptions::default();
 
     for name in &union {
         let has_a = sheets_a.iter().any(|s| s == name);

@@ -1,6 +1,6 @@
 [package]
 name = "mumford"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 description = "Format-aware diff engines for common document types — PDF, Word, Excel, RTF, PowerPoint, JSON, plain text"
@@ -14,7 +14,7 @@ default = ["serde", "json"]
 json = ["dep:serde_json"]
 
 [dependencies]
-tate = { version = "0.1", path = "../tate" }
+tate = "0.3"
 # Format parsing
 calamine = { version = "0.26", features = ["dates"] }
 zip = "2"
