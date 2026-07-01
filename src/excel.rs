@@ -8,7 +8,7 @@
 
 use calamine::{open_workbook_auto, Data, Reader};
 use sha2::{Digest, Sha256};
-use tate::grid::{grid_diff, GridDiff, GridOptions};
+use tate::grid::{grid_diff, GridDiff, GridOptions, Init};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -43,7 +43,37 @@ pub struct ExcelResult {
 
 type Workbook = std::collections::BTreeMap<String, Vec<Vec<String>>>;
 
+/// Options controlling how [`excel_diff_with`] aligns each sheet.
+///
+/// The default is a zero-assumption positional alignment (identity init, no
+/// column locking) — the same behaviour as [`excel_diff`]. Callers that know
+/// their sheets are tabular (a header row followed by data rows) can opt into
+/// header-based column alignment and column locking, which keeps a column whose
+/// every value changed (a timestamp column, say) as one modified column instead
+/// of mis-reading it as a delete+insert of whole columns.
+#[derive(Debug, Clone, Default)]
+pub struct ExcelOptions {
+    /// Detect each sheet's header row and seed column alignment from it (via
+    /// [`Init::Header`]). When `false`, columns are aligned positionally.
+    pub detect_header: bool,
+    /// Lock the column alignment after initialization so coordinate descent
+    /// never re-derives columns from cell content (see [`GridOptions::lock_columns`]).
+    /// Most useful together with `detect_header` on fixed-schema tables.
+    pub lock_columns: bool,
+}
+
+/// Diff two workbooks with the default (positional) alignment. Equivalent to
+/// [`excel_diff_with`] with [`ExcelOptions::default`].
 pub fn excel_diff(path_a: &str, path_b: &str) -> Result<ExcelResult, String> {
+    excel_diff_with(path_a, path_b, &ExcelOptions::default())
+}
+
+/// Diff two workbooks with explicit [`ExcelOptions`].
+pub fn excel_diff_with(
+    path_a: &str,
+    path_b: &str,
+    opts: &ExcelOptions,
+) -> Result<ExcelResult, String> {
     let mut res = ExcelResult {
         file_type: "excel".into(),
         path_a: path_a.into(),
@@ -66,8 +96,6 @@ pub fn excel_diff(path_a: &str, path_b: &str) -> Result<ExcelResult, String> {
     let sheets_b: Vec<String> = book_b.as_ref().map(|b| b.keys().cloned().collect()).unwrap_or_default();
     let union = union_strings(&sheets_a, &sheets_b);
 
-    let opts = GridOptions::default();
-
     for name in &union {
         let has_a = sheets_a.iter().any(|s| s == name);
         let has_b = sheets_b.iter().any(|s| s == name);
@@ -75,7 +103,21 @@ pub fn excel_diff(path_a: &str, path_b: &str) -> Result<ExcelResult, String> {
         let rows_a = book_a.as_ref().and_then(|b| b.get(name)).unwrap_or(&empty);
         let rows_b = book_b.as_ref().and_then(|b| b.get(name)).unwrap_or(&empty);
 
-        let grid = grid_diff(rows_a, rows_b, &opts);
+        let init = if opts.detect_header {
+            Init::Header {
+                a: detect_header_row(rows_a),
+                b: detect_header_row(rows_b),
+            }
+        } else {
+            Init::Positional
+        };
+        let grid_opts = GridOptions {
+            init,
+            lock_columns: opts.lock_columns,
+            ..GridOptions::default()
+        };
+
+        let grid = grid_diff(rows_a, rows_b, &grid_opts);
 
         let status = if !has_a {
             "added".into()
@@ -193,6 +235,30 @@ fn format_float(f: f64) -> String {
     }
 }
 
+/// Detect the header row of a sheet: the first row at least HEADER_FILL_NUM /
+/// HEADER_FILL_DEN full of non-empty cells. Many spreadsheets carry a title and
+/// a metadata block (report title, parameters, blank lines) above the real
+/// column header, so row 0 is not a safe assumption; the first densely-filled
+/// row is the header. Falls back to row 0 when nothing qualifies (e.g. a very
+/// sparse sheet).
+fn detect_header_row(rows: &[Vec<String>]) -> usize {
+    let width = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    if width < 2 {
+        return 0;
+    }
+    rows.iter()
+        .position(|r| {
+            let filled = r.iter().filter(|c| !c.trim().is_empty()).count();
+            filled * HEADER_FILL_DEN >= width * HEADER_FILL_NUM
+        })
+        .unwrap_or(0)
+}
+
+/// Header-row detection threshold: a row is the header when at least
+/// HEADER_FILL_NUM / HEADER_FILL_DEN (= 80%) of the sheet width is non-empty.
+const HEADER_FILL_NUM: usize = 8;
+const HEADER_FILL_DEN: usize = 10;
+
 fn union_strings(a: &[String], b: &[String]) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut out: Vec<String> = Vec::new();
@@ -238,6 +304,28 @@ mod tests {
         let opts = GridOptions::default();
         let gd = grid_diff(&a, &b, &opts);
         assert!(gd.rows.is_empty());
+    }
+
+    #[test]
+    fn detect_header_row_skips_metadata_block() {
+        // A spec-style sheet: title + metadata rows above the real header.
+        let g = grid(&[
+            &["My Spec Title"],
+            &["Protocol", "", "", "D8450C00005"],
+            &[],
+            &["Domain", "Variable", "Label", "Type", "Length"],
+            &["DM", "AGE", "Age", "num", "8"],
+        ]);
+        assert_eq!(detect_header_row(&g), 3);
+    }
+
+    #[test]
+    fn detect_header_row_defaults_to_zero_when_dense() {
+        let g = grid(&[
+            &["Output", "Program", "Programmer", "Time", "Status"],
+            &["adsl", "adsl.sas", "x", "10:00", "ok"],
+        ]);
+        assert_eq!(detect_header_row(&g), 0);
     }
 
     #[test]
