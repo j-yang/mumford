@@ -1,6 +1,6 @@
 [package]
 name = "mumford"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 license = "MIT"
 description = "Format-aware diff engines for common document types — PDF, Word, Excel, PowerPoint, JSON, plain text, folders"
