@@ -24,6 +24,12 @@
 
 use tate::tree::{tree_diff, TreeDiff, TreeNode};
 
+/// Parse a JSON string into a [`TreeNode`] for use with `tate::tree` functions.
+pub fn json_to_tree(json: &str) -> Result<tate::tree::TreeNode, String> {
+    let value: serde_json::Value = serde_json::from_str(json).map_err(|e| format!("parse: {e}"))?;
+    Ok(to_tree_node("root", &value))
+}
+
 /// Diff two JSON strings and return the structural changes.
 ///
 /// # Example
