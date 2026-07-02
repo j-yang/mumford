@@ -16,9 +16,10 @@
 //!
 //! ## Architecture
 //!
-//! `tate` (algorithms: lines, inline, grid, tree, unified, merge) is the
-//! foundation. `mumford` (format engines: parse → feed to tate → wrap result)
-//! sits on top. Your app (domain adapters + UI) sits above mumford.
+//! `tate` (algorithms: lines, inline, grid alignment, tree diff/merge, patch,
+//! unified) is the foundation. `mumford` (format engines: parse → feed to tate
+//! → wrap result) sits on top. Your app (domain adapters + UI) sits above
+//! mumford.
 
 pub mod text;
 pub mod pdf;
