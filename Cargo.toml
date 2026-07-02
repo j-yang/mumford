@@ -11,10 +11,10 @@ categories = ["text-processing", "filesystem"]
 
 [features]
 default = ["serde", "json"]
-json = ["dep:serde_json"]
+json = ["dep:serde_json", "tate/json"]
 
 [dependencies]
-tate = "0.5"
+tate = "0.6"
 # Format parsing
 calamine = { version = "0.26", features = ["dates"] }
 zip = "2"

@@ -22,12 +22,16 @@
 //! ```
 //! and `tree_diff` reports changes like `{Modified, id="port", changed_attrs=[(value, 8080→9090)]}`.
 
+use tate::json::from_json_value;
 use tate::tree::{tree_diff, TreeDiff, TreeNode};
 
 /// Parse a JSON string into a [`TreeNode`] for use with `tate::tree` functions.
-pub fn json_to_tree(json: &str) -> Result<tate::tree::TreeNode, String> {
+///
+/// The `Value → TreeNode` mapping lives in tate ([`tate::json::from_json_value`]);
+/// this wrapper only adds the string-parsing step.
+pub fn json_to_tree(json: &str) -> Result<TreeNode, String> {
     let value: serde_json::Value = serde_json::from_str(json).map_err(|e| format!("parse: {e}"))?;
-    Ok(to_tree_node("root", &value))
+    Ok(from_json_value("root", &value))
 }
 
 /// Diff two JSON strings and return the structural changes.
@@ -47,54 +51,9 @@ pub fn json_to_tree(json: &str) -> Result<tate::tree::TreeNode, String> {
 pub fn json_diff(a: &str, b: &str) -> Result<TreeDiff, String> {
     let va: serde_json::Value = serde_json::from_str(a).map_err(|e| format!("parse A: {e}"))?;
     let vb: serde_json::Value = serde_json::from_str(b).map_err(|e| format!("parse B: {e}"))?;
-    let ta = to_tree_node("root", &va);
-    let tb = to_tree_node("root", &vb);
+    let ta = from_json_value("root", &va);
+    let tb = from_json_value("root", &vb);
     Ok(tree_diff(&ta, &tb))
-}
-
-/// Convert a serde_json::Value into a tate TreeNode with the given kind.
-fn to_tree_node(kind: &str, value: &serde_json::Value) -> TreeNode {
-    let mut node = TreeNode::new(kind);
-
-    match value {
-        serde_json::Value::Object(map) => {
-            for (key, val) in map {
-                let child = to_tree_node(key, val);
-                // Object keys get identity = key so siblings match by name.
-                let child = if child.identity.is_none() && !child.children.is_empty() {
-                    TreeNode {
-                        identity: Some(key.clone()),
-                        ..child
-                    }
-                } else {
-                    child.with_identity(key.clone())
-                };
-                node = node.with_child(child);
-            }
-        }
-        serde_json::Value::Array(arr) => {
-            for item in arr {
-                let child = to_tree_node("[item]", item);
-                node = node.with_child(child);
-            }
-        }
-        serde_json::Value::String(s) => {
-            node = node.with_text(s.clone()).with_attr("value", s.clone());
-        }
-        serde_json::Value::Number(n) => {
-            let s = n.to_string();
-            node = node.with_text(s.clone()).with_attr("value", s);
-        }
-        serde_json::Value::Bool(b) => {
-            let s = b.to_string();
-            node = node.with_text(s.clone()).with_attr("value", s);
-        }
-        serde_json::Value::Null => {
-            node = node.with_attr("value", "null");
-        }
-    }
-
-    node
 }
 
 #[cfg(test)]
