@@ -2,14 +2,14 @@
 //! Reads word/document.xml from the zip and walks it with a streaming XML reader,
 //! tracking paragraphs (<w:p>), tables (<w:tbl>), rows (<w:tr>), cells (<w:tc>)
 //! and text runs (<w:t>). Paragraph and table alignment use LCS via
-//! [`tate::lines::diff`] + [`tate::inline::pair_replacements`], so inserting
+//! [`mumford::lines::diff`] + [`crate::inline::pair_replacements`], so inserting
 //! content in the middle does not cascade into spurious modifications.
 
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use std::io::Read;
-use tate::inline::{pair_replacements, OpType, DEFAULT_SIMILARITY};
-use tate::lines::diff;
+use crate::inline::{pair_replacements, OpType, DEFAULT_SIMILARITY};
+use crate::lines::diff;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

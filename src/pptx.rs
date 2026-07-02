@@ -1,6 +1,6 @@
 //! PowerPoint (.pptx) diff: extract text from each slide via zip + quick-xml,
 //! align slides by content similarity, then diff slide text via
-//! [`tate::lines::diff`].
+//! [`mumford::lines::diff`].
 //!
 //! A .pptx is an OOXML zip container. Each slide lives at
 //! `ppt/slides/slideN.xml`. We extract text runs (`<a:t>`) per slide,
@@ -13,8 +13,8 @@ use std::io::Read;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 #[cfg(test)]
-use tate::inline::OpType;
-use tate::lines::diff;
+use crate::inline::OpType;
+use crate::lines::diff;
 
 /// Minimum Jaccard similarity to confirm a positional slide match. Lower than
 /// the reorder threshold because position agreement is already strong evidence.
@@ -50,7 +50,7 @@ pub struct SlideDiff {
     pub slide_b: usize,
     /// Line-level ops for this slide pair (only populated for Modified).
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
-    pub ops: Vec<tate::inline::Op>,
+    pub ops: Vec<crate::inline::Op>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -98,7 +98,7 @@ pub fn pptx_diff(path_a: &str, path_b: &str) -> Result<PptxResult, String> {
                 } else {
                     sd.status = "modified".into();
                     let raw = diff(a_text, b_text);
-                    sd.ops = tate::inline::pair_replacements(raw, tate::inline::DEFAULT_SIMILARITY);
+                    sd.ops = crate::inline::pair_replacements(raw, crate::inline::DEFAULT_SIMILARITY);
                     res.modified += 1;
                 }
             }

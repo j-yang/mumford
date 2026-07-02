@@ -1,26 +1,39 @@
 //! Mumford: format-aware diff engines for common document types.
 //!
-//! Built on top of [`tate`] (the algorithm layer), mumford adds file-format
-//! parsing and dispatching so applications can diff real documents without
-//! writing their own parsers.
+//! Built on top of [`tate`] (the pure tree algebra), mumford owns everything
+//! format- and alignment-related: the diff/keying engines and the file-format
+//! parsers, so applications can diff real documents without writing their own.
 //!
 //! ## Supported formats
 //!
 //! - **Plain text** — line-level diff with word-level inline highlights
 //! - **PDF** — text extraction via pdfium, running-header stripping, line diff
 //! - **Word (.docx)** — OOXML paragraph + table extraction, paragraph diff
-//! - **Excel (.xlsx/.xls/.xlsm)** — cell-level grid alignment via `tate::grid`
+//! - **Excel (.xlsx/.xls/.xlsm)** — cell-level grid alignment via `mumford::grid`
 //! - **PowerPoint (.pptx)** — slide text extraction and alignment, line diff
 //! - **JSON** (optional `json` feature) — structural tree diff via `tate::tree`
 //! - **Folders** — recursive comparison with sha256 hashing and rename detection
 //!
 //! ## Architecture
 //!
-//! `tate` (algorithms: lines, inline, grid alignment, tree diff/merge, patch,
-//! unified) is the foundation. `mumford` (format engines: parse → feed to tate
-//! → wrap result) sits on top. Your app (domain adapters + UI) sits above
-//! mumford.
+//! `tate` is the pure tree algebra (the `Section` object, `tree_diff` /
+//! `tree_merge`, and the `patch` algebra) — it knows nothing about formats.
+//! `mumford` sits on top and owns everything format- and alignment-related: the
+//! diff/keying engines (`lines`, `inline`, `grid`, `unified`) that turn un-keyed
+//! sequence and grid data into aligned, keyable form, plus the format engines
+//! (`text`, `pdf`, `docx`, `excel`, `pptx`, `json`, `folder`). Your app (domain
+//! adapters + UI) sits above mumford.
 
+// Diff/alignment engines and keying adapters (formerly in tate; moved here so
+// tate stays a pure tree-algebra crate). These are the algorithms that turn
+// un-keyed sequence/grid data into an aligned, keyable form.
+pub mod lines;
+pub mod inline;
+pub mod grid;
+pub mod unified;
+mod lcs;
+
+// Format engines.
 pub mod text;
 pub mod pdf;
 pub mod docx;

@@ -1,10 +1,10 @@
-//! Plain-text line diff. Uses [`tate::lines::diff`] for the edit script and
-//! [`tate::inline::pair_replacements`] for word-level Replace rows.
+//! Plain-text line diff. Uses [`mumford::lines::diff`] for the edit script and
+//! [`mumford::inline::pair_replacements`] for word-level Replace rows.
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use tate::inline::{Op, OpType, DEFAULT_SIMILARITY};
+use crate::inline::{Op, OpType, DEFAULT_SIMILARITY};
 
 #[derive(Debug, Default, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -34,8 +34,8 @@ pub fn text_diff(path_a: &str, path_b: &str) -> std::io::Result<TextResult> {
 }
 
 pub fn build_text_result(path_a: &str, path_b: &str, a: Vec<String>, b: Vec<String>) -> TextResult {
-    let raw = tate::lines::diff(&a, &b);
-    let ops = tate::inline::pair_replacements(raw, DEFAULT_SIMILARITY);
+    let raw = crate::lines::diff(&a, &b);
+    let ops = crate::inline::pair_replacements(raw, DEFAULT_SIMILARITY);
     let mut summary = TextSummary::default();
     for op in &ops {
         match op.typ {

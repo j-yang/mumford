@@ -6,8 +6,8 @@
 //! `libpdfium.so` on Linux) is located via `PDFIUM_LIB_PATH`, then next to the
 //! executable, then the system loader.
 
-use tate::lines::diff;
-use tate::inline::OpType;
+use crate::lines::diff;
+use crate::inline::OpType;
 use crate::text::{build_text_result, TextResult};
 use pdfium_render::prelude::{PdfRenderConfig, Pdfium};
 #[cfg(feature = "serde")]
@@ -402,11 +402,11 @@ struct BiChange {
     kind: ChangeKind,
     a_index: Option<usize>,
     a_page: Option<usize>,
-    a_segs: Vec<tate::inline::Seg>,
+    a_segs: Vec<crate::inline::Seg>,
     a_text: String,
     b_index: Option<usize>,
     b_page: Option<usize>,
-    b_segs: Vec<tate::inline::Seg>,
+    b_segs: Vec<crate::inline::Seg>,
     b_text: String,
 }
 
@@ -589,7 +589,7 @@ pub fn page_changes(
 fn classify(lines_a: &[GeomLine], lines_b: &[GeomLine]) -> (Vec<BiChange>, Vec<PageAlign>) {
     let text_a: Vec<String> = lines_a.iter().map(|l| l.text.clone()).collect();
     let text_b: Vec<String> = lines_b.iter().map(|l| l.text.clone()).collect();
-    let ops = tate::inline::pair_replacements(diff(&text_a, &text_b), tate::inline::DEFAULT_SIMILARITY);
+    let ops = crate::inline::pair_replacements(diff(&text_a, &text_b), crate::inline::DEFAULT_SIMILARITY);
 
     let mut changes: Vec<BiChange> = Vec::new();
     let mut align: Vec<PageAlign> = Vec::new();
@@ -658,7 +658,7 @@ fn classify(lines_a: &[GeomLine], lines_b: &[GeomLine]) -> (Vec<BiChange>, Vec<P
 
 /// word_rects maps the changed inline segments of a Modified line back to glyph
 /// rectangles, so only the words that differ are highlighted.
-fn word_rects(boxes: &[CharBox], b_segs: &[tate::inline::Seg]) -> Vec<HiRect> {
+fn word_rects(boxes: &[CharBox], b_segs: &[crate::inline::Seg]) -> Vec<HiRect> {
     if b_segs.is_empty() {
         return union_rect(boxes, 0, boxes.len()).into_iter().collect();
     }

@@ -1,5 +1,5 @@
 //! Excel (.xlsx/.xls/.xlsm) diff: read workbooks via calamine, align rows and
-//! columns via [`tate::grid::grid_diff`].
+//! columns via [`mumford::grid::grid_diff`].
 //!
 //! Calamine gives us raw cell values (no number-format styling); we normalize
 //! them to strings, hand the string grid to `grid_diff`, and wrap the result
@@ -8,7 +8,7 @@
 
 use calamine::{open_workbook_auto, Data, Reader};
 use sha2::{Digest, Sha256};
-use tate::grid::{grid_diff, GridDiff, GridOptions, Init};
+use crate::grid::{grid_diff, GridDiff, GridOptions, Init};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
