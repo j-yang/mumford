@@ -1,0 +1,47 @@
+name: Publish
+
+# Publish mumford to crates.io when a version tag is pushed.
+#   git tag v0.5.0 && git push origin v0.5.0
+# The tag version must match the `version` in Cargo.toml.
+#
+# Requires repo secret CARGO_REGISTRY_TOKEN (a crates.io API token).
+#
+# PREREQUISITE: the tate version mumford depends on must already be published
+# to crates.io — this job builds against the real published tate, not the local
+# path override used during development.
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify tag matches Cargo.toml version
+        run: |
+          crate_ver=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          tag_ver="${GITHUB_REF_NAME#v}"
+          echo "tag=$tag_ver crate=$crate_ver"
+          test "$crate_ver" = "$tag_ver" || { echo "::error::tag v$tag_ver != Cargo.toml $crate_ver"; exit 1; }
+
+      # The [patch.crates-io] path override is a dev-only convenience that points
+      # tate at a local checkout. crates.io rejects packages with path patches,
+      # so strip that section and rebuild the lockfile against published crates.
+      - name: Remove dev-only [patch.crates-io]
+        run: |
+          if grep -q '^\[patch\.crates-io\]' Cargo.toml; then
+            sed -i '/^\[patch\.crates-io\]/,/^$/d' Cargo.toml
+            echo "stripped [patch.crates-io]"
+          fi
+          # Also drop the dev-only comment block if it precedes it.
+          cargo generate-lockfile
+
+      - name: Test
+        run: cargo test --all-features
+
+      - name: Publish to crates.io
+        run: cargo publish --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
